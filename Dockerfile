@@ -1,57 +1,111 @@
 FROM ubuntu:18.04
 
-
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get -qq -y update \ 
-    && apt-get -qq -y install ncbi-blast+ \ 
-    && umask 022 \
-    && apt-get install -y python3-pip python3-dev \
-    && cd /usr/local/bin \
-    && ln -s /usr/bin/python3 python \
+RUN apt-get -qq -y update \
+    && apt-get -qq -y update \
+    && apt-get -qq -y install \
+    autoconf \
+    automake \
+    bedtools \
+    build-essential \
+    cd-hit \
+    curl \
+    default-jre \ 
+    git \
+    infernal \
+    libopenjp2-7 \
+    libtiff5 \
+    libz-dev \
+    mafft \
+    ncbi-blast+ \
+    python3-dev \
+    python3-pip \
+    samtools \
+    wget \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# /opt/minimap2-2.24_x64-linux
+RUN curl -L https://github.com/lh3/minimap2/releases/download/v2.24/minimap2-2.24_x64-linux.tar.bz2 \
+    | tar -jxvf -
+
+# /opt/MitoHiFi
+RUN git clone https://github.com/marcelauliano/MitoHiFi.git \
+    && cd MitoHiFi \
+    && chmod +x *.py \
+    && sed -i '1i#!/usr/bin/env python3' mitohifi.py findFrameShifts.py fixContigHeaders.py \
+    && sed -i '1 s/python\>/python3/' *.py \
+    && sed -i 's/"MITOS\/data"/"\/opt\/databases"/' parallel_annotation_mitos.py \
     && pip3 --no-cache-dir install --upgrade pip \
-    && pip3 install biopython \
-    && pip3 install pandas \
-    && pip3 install entrezpy \
-    && apt-get -qq -y install automake autoconf \
-    && apt -qq -y install default-jre \ 
-    && apt-get -qq -y install build-essential \
-    && apt-get -qq -y install cd-hit \
-    && apt-get -qq -y install mafft \	   
-    && apt-get -qq -y install samtools \	   
-    && apt-get -qq -y install curl \
-    && curl -L https://github.com/lh3/minimap2/releases/download/v2.17/minimap2-2.17_x64-linux.tar.bz2 | tar -jxvf - \
-    && mv ./minimap2-2.17_x64-linux/minimap2 /bin/ \
-    && cd /bin/ \
-    && apt-get -qq -y install git \
-    && git clone https://github.com/RemiAllio/MitoFinder.git \
+    && pip3 --no-cache-dir install biopython \
+    pandas \
+    Pillow \
+    matplotlib \
+    entrezpy \
+    dna_features_viewer \
+    bcbio-gff
+
+# /opt/hifiasm-0.16.1
+RUN curl -L https://github.com/chhylp123/hifiasm/archive/refs/tags/0.16.1.tar.gz \
+    | tar -xzvf - \
+    && cd hifiasm-0.16.1 \
+    && make \
+    && wget -P /usr/local/src https://bootstrap.pypa.io/pip/2.7/get-pip.py \
+    && python2 /usr/local/src/get-pip.py \
+    && python2 -m pip --no-cache-dir install biopython==1.70
+
+# /opt/MitoFinder
+RUN git clone https://github.com/RemiAllio/MitoFinder.git \
     && cd MitoFinder \
-    && ./install.sh  \
-    && cd /bin/ \
-    && apt-get -qq -y install wget \
-    && apt-get -qq -y install libz-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && wget https://github.com/chhylp123/hifiasm/archive/refs/tags/0.14.2.tar.gz \
-    && tar -xzvf 0.14.2.tar.gz \
-    && cd hifiasm-0.14.2 && make
+    && ./install.sh
 
-ENV PATH /bin/MitoFinder/:${PATH}
-ENV PATH /bin/hifiasm-0.14.2/:${PATH}
+RUN mkdir -p /opt/wrappers
 
-COPY mitohifi_v2.py /bin/
-RUN echo "#!/usr/bin/env python" | cat - /bin/mitohifi_v2.py | tee /bin/mitohifi_v2.py
-COPY gfa2fa /bin/
-COPY alignContigs.py /bin/
-COPY circularizationCheck.py /bin/
-COPY cleanUpCWD.py /bin/
-COPY filterfasta.py /bin/
-COPY getMitoLength.py /bin/
-COPY getReprContig.py /bin/
-COPY parse_blast.py /bin/
-COPY rotation.py /bin/
-COPY findMitoReference.py /bin/
-COPY findFrameShits.py /bin/
-COPY fixContigHeaders.py /bin/
+COPY mitos_wrapper.sh /opt/wrappers/runmitos.py
 
-RUN chmod -R 755 /bin
-CMD ["/bin/bash"]
+COPY mitofinder_wrapper.sh /opt/wrappers/mitofinder
+
+RUN chmod -R 755 /opt/wrappers
+
+ARG CONDA_DIR=/opt/conda
+
+RUN wget -P /usr/local/src https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    && bash /usr/local/src/Miniconda3-latest-Linux-x86_64.sh -b -p $CONDA_DIR \
+    && $CONDA_DIR/bin/conda install -n base conda-libmamba-solver
+
+RUN $CONDA_DIR/bin/conda create -n mitos_env --experimental-solver=libmamba -c bioconda -y mitos
+
+RUN $CONDA_DIR/bin/conda create -n mitofinder_env --experimental-solver=libmamba -c bioconda -c conda-forge -y mitofinder
+
+RUN $CONDA_DIR/bin/conda clean -a
+
+# MitoFinder adjustments to make conda version work
+RUN touch /opt/conda/envs/mitofinder_env/bin/install.sh.ok
+COPY Mitofinder.config /opt/conda/envs/mitofinder_env/bin/
+RUN cp -r /opt/MitoFinder/mitfi/ /opt/conda/envs/mitofinder_env/bin/
+
+RUN mkdir -p /opt/databases
+
+WORKDIR /opt/databases
+
+RUN curl -L https://zenodo.org/record/4284483/files/refseq89m.tar.bz2?download=1 | tar -jxvf - \
+    && curl -L https://zenodo.org/record/4284483/files/refseq89f.tar.bz2?download=1 | tar -jxvf -
+
+RUN useradd -m mu
+
+USER mu
+
+WORKDIR /tmp
+
+ENV CONDA_DIR=/opt/conda
+
+ENV PATH /opt/wrappers:/opt/hifiasm-0.16.1/:/opt/MitoHiFi/:/opt/minimap2-2.24_x64-linux/:${PATH}
+
+USER root
+
+RUN chmod 755 /opt/MitoFinder/*
+
+USER mu
