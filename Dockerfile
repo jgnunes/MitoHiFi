@@ -78,14 +78,17 @@ RUN wget -P /usr/local/src https://repo.anaconda.com/miniconda/Miniconda3-latest
 
 RUN $CONDA_DIR/bin/conda create -n mitos_env --experimental-solver=libmamba -c bioconda -y mitos
 
-RUN $CONDA_DIR/bin/conda create -n mitofinder_env --experimental-solver=libmamba -c bioconda -c conda-forge -y mitofinder
+RUN $CONDA_DIR/bin/conda create -n mitofinder_env --experimental-solver=libmamba -c bioconda -c conda-forge -y mitofinder -c infernal
 
 RUN $CONDA_DIR/bin/conda clean -a
 
 # MitoFinder adjustments to make conda version work
 RUN touch /opt/conda/envs/mitofinder_env/bin/install.sh.ok
+
 COPY Mitofinder.config /opt/conda/envs/mitofinder_env/bin/
+
 RUN cp -r /opt/MitoFinder/mitfi/ /opt/conda/envs/mitofinder_env/bin/
+RUN sed 's/.\/infernal-1.0.2\/src\/cmsearch/\/opt\/conda\/envs\/mitofinder_env\/bin\/mitfi\/infernal-1.0.2\/src\/cmsearch/' /opt/MitoFinder/mitfi/mitfi_config.txt > /opt/conda/envs/mitofinder_env/bin/mitfi/mitfi_config.txt
 
 RUN mkdir -p /opt/databases
 
@@ -107,5 +110,7 @@ ENV PATH /opt/wrappers:/opt/hifiasm-0.16.1/:/opt/MitoHiFi/:/opt/minimap2-2.24_x6
 USER root
 
 RUN chmod 755 /opt/MitoFinder/*
+
+RUN chmod a+x /opt/conda/envs/mitofinder_env/bin/mitfi/
 
 USER mu
