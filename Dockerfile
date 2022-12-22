@@ -67,6 +67,7 @@ RUN git clone https://github.com/RemiAllio/MitoFinder.git \
 RUN mkdir -p /opt/wrappers
 
 COPY mitos_wrapper.sh /opt/wrappers/runmitos.py
+COPY mitofinder_wrapper.sh /opt/wrappers/mitofinder
 
 RUN chmod -R 755 /opt/wrappers
 
